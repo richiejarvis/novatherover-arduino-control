@@ -1,0 +1,3 @@
+[submodule "Arduino-PS2X"]
+	path = Arduino-PS2X
+	url = https://github.com/madsci1016/Arduino-PS2X/
