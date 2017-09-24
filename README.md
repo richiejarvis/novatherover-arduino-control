@@ -4,6 +4,8 @@ Arduino Control code for Nova the Rover
 *Richie Jarvis - http://nebul.ae*
 *2017-09-24 - GPL licenced*
 
+*Special thanks to Bill Porter for his PS2X library used to control Nova: http://www.billporter.info/2010/06/05/playstation-2-controller-arduino-library-v1-0/*
+
 ## Introduction
 Nova the Rover (https://www.facebook.com/novatherover) is an Arduino controlled project I started a couple of years ago with a simple 24v Mobility Scooter brought off Ebay.  
 
@@ -19,7 +21,9 @@ Originally I was hoping to use the original computer/controller unit that came w
 
 I then added an Arduino Uno (http://www.robotshop.com/uk/arduino-uno-r3-usb-microcontroller.html) and a 4 relay board to handle the switching of polarity, turning the magnetic brake on/off, etc to finish things off.
 
-This project is the current set of control code as it develops over time.
+This project is the set of control code as it develops over time.
+
+
 
 ##Thinking Ahead
 
