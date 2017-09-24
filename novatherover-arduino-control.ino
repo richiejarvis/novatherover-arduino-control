@@ -32,23 +32,28 @@ int error = 0;
 byte type = 0;
 byte vibrate = 0;
 int pwm_value = 0;
-int ly_pos = 127;
-int rx_pos = 127;
-int max_speed = 40;
+int throttle_pos = 127;
+int steering_pos = 127;
+
+int max_speed = 20;
 int counter = 0;
+int buttonBounceCounter = 0;
 
 // Set pin vars to off/high
 int motor_direction = HIGH;
 int engine_power = HIGH;
 int steering_power = HIGH;
-int relay3_state = HIGH;
-int relay4_state = HIGH;
+int steering_relay_1 = HIGH;
+int steering_relay_2 = HIGH;
 int increment = 0;
 int target_speed = 0;
 
 boolean cruise_control = false;
 boolean beast_mode = false;
 boolean first_run = false;
+
+// Storage array to record previous condition
+int storage_array[];
 
 // Card reset function
 void(* resetFunc) (void) = 0;
@@ -89,17 +94,18 @@ void setup()
   // Set initial states
   digitalWrite(RELAY1_PIN, engine_power);
   digitalWrite(RELAY2_PIN, steering_power);
-  digitalWrite(RELAY3_PIN, relay3_state);
-  digitalWrite(RELAY4_PIN, relay4_state);
+  digitalWrite(RELAY3_PIN, steering_relay_1);
+  digitalWrite(RELAY4_PIN, steering_relay_2);
 }
 
 // Controls
-// L1 - Max Speed Down
-// L2 - Cruise Off
-// R1 - Max Speed Up
-// R2 - Cruise On
-// Left Stick (Up/Down) - Throttle
-// Right Stick (Left/Right) - Steering
+// PSAB_L1 - Max Speed Down
+// PSAB_R1 - Max Speed Up
+// PSAB_CIRCLE - Cruise On/Off
+// PSS_LY/PSS_RY - Left Stick (Up/Down) - Throttle
+// PSS_LX/PSS_RX - Right Stick (Left/Right) - Steering
+// PSB_TRIANGLE - Speed 20 (Lowest working speed)
+// PSB_SQUARE - Emergency Stop
 
 void speedChange() {
   // Check for beast_mode first....
@@ -132,13 +138,13 @@ void speedChange() {
   }
 }
 
-// Write current values to the EEPROM for permanent storage for later retrieval.  
-// Might not need to store too much.... 
-boolean dumpToEeprom(){
-  // 
+// Write current values to the EEPROM for permanent storage for later retrieval.
+// Might not need to store too much....
+boolean dumpToEeprom() {
+  //
 }
 
-// Make numbers appear in 
+// Make numbers appear in
 String threeDigitFormat(int value) {
   if (value < 10) {
     return "00" + String(value);
@@ -149,92 +155,134 @@ String threeDigitFormat(int value) {
   }
 }
 
+// This function will report the newValue only when it does not match the old value
+int reportOnRelease(int newValue, int storagePos) {
+  if (newValue == storage_array[storagePos]) {
+    return storage_array[storagePos];
+  } else {
+    return storage_array[newValue];
+  }
+
+}
+
 void loop()
 {
   ps2x.read_gamepad();
+
   // Check the stick positions.
   // If they are all at 0,128 or 0, then there is a controller problem, and we should not do anything
-  if ( (ps2x.Analog(PSS_LY) == 0 && ps2x.Analog(PSS_LX) == 0 && ps2x.Analog(PSS_RY) == 0 && ps2x.Analog(PSS_RX) == 0) ||
-       (ps2x.Analog(PSS_LY) == 128 && ps2x.Analog(PSS_LX) == 128 && ps2x.Analog(PSS_RY) == 128 && ps2x.Analog(PSS_RX) == 128) ||
-       (ps2x.Analog(PSS_LY) == 255 && ps2x.Analog(PSS_LX) == 255 && ps2x.Analog(PSS_RY) == 255 && ps2x.Analog(PSS_RX) == 255)) {
+  if (
+    // All axis cannot be 0
+    //    (ps2x.Analog(PSS_LY) == 0 && ps2x.Analog(PSS_LX) == 0 && ps2x.Analog(PSS_RY) == 0 && ps2x.Analog(PSS_RX) == 0) ||
+    // All axis cannot be 128 at the same time (127 is middle)
+    (ps2x.Analog(PSS_LY) == 128 && ps2x.Analog(PSS_LX) == 128 && ps2x.Analog(PSS_RY) == 128 && ps2x.Analog(PSS_RX) == 128) ||
+    // All axis cannot be at max at the same time
+    //       (ps2x.Analog(PSS_LY) == 255 && ps2x.Analog(PSS_LX) == 255 && ps2x.Analog(PSS_RY) == 255 && ps2x.Analog(PSS_RX) == 255)
+  ) {
+
     //    Serial.println("Controller Failure - Abort");
+    // Stop this happening too frequently
     delay(500);
+    // Might want to store stuff in EEPROM here before restart....
     resetFunc();
   } else {
-    // Read the Left stick Y position (Throttle)
+
+    // Read the Y position (Throttle)
     // 0-126 == Up
     // 127 == At rest
     // 128 == disconnected
     // 129-255 == Down
-    ly_pos = ps2x.Analog(PSS_LY);
-    // Read the Right stick X position (Steering)
+
+    // Read the Left stick position in preference to Right
+    // If LX is reporting something, then use that
+    // Otherwise use RX
+    throttle_pos = ps2x.Analog(PSS_LY);
+    if (throttle_pos == 127 || throttle_pos == 128)) {
+      throttle_pos = ps2x.Analog(PSS_RY);
+    }
+
+
+    // Read the X position (Steering)
     // 0-126 == Left
     // 127 == At rest
     // 128 == disconnected
     // 129-255 == Right
-    rx_pos = ps2x.Analog(PSS_RX);
+
+    // Read the Left stick position in preference to Right
+    // If LX is reporting something, then use that
+    // Otherwise use RX
+    steering_pos = ps2x.Analog(PSS_LX);
+    if (steering_pos == 127 || steering_pos == 128)) {
+    steering_pos = ps2x.Analog(PSS_RX);
+    }
+
+
     // Set the Throttle Position.
-    if (ly_pos < 127) {
-      // Go Forward
-      target_speed = map(ly_pos, 128, 0, 0, max_speed);
+    if (throttle_pos < 127) {
+    // Go Forward
+    target_speed = map(throttle_pos, 128, 0, 0, max_speed);
       motor_direction = LOW;
       engine_power = LOW;
       first_run = true;
       speedChange();
-    } else if (ly_pos > 128) {
-      // Go Backwards
-      target_speed = map(ly_pos, 128, 255, 0, max_speed);
+    } else if (throttle_pos > 128) {
+    // Go Backwards
+    target_speed = map(throttle_pos, 128, 255, 0, max_speed);
       motor_direction = HIGH;
       engine_power = LOW;
       first_run = true;
       speedChange();
     } else if (cruise_control && pwm_value > 0) {
-      // Cruise Mode On
-      engine_power = LOW;
-    } else if (ly_pos == 127) {
-      target_speed = 0;
-      engine_power = HIGH;
-      first_run = true;
-      speedChange();
+    // Cruise Mode On
+    engine_power = LOW;
+  } else if (throttle_pos == 127 || ) {
+    target_speed = 0;
+    engine_power = HIGH;
+    first_run = true;
+    speedChange();
     }
   }
+
   // Adjust the steering via relays
-  if (rx_pos < 100 ) {
+  if (steering_pos < 100 ) {
     // Steer Left
     steering_power = LOW;
-    relay3_state = LOW;
-    relay4_state = LOW;
-  } else if (rx_pos > 200) {
+    steering_relay_1 = LOW;
+    steering_relay_2 = LOW;
+  } else if (steering_pos > 200) {
     // Steer Right
     steering_power = LOW;
-    relay3_state = HIGH;
-    relay4_state = HIGH;
+    steering_relay_1 = HIGH;
+    steering_relay_2 = HIGH;
   } else  {
     // Don't Move
     steering_power = HIGH;
     // These 2 aren't needed, except to turn the Relay LED's off.....
-    relay3_state = HIGH;
-    relay4_state = HIGH;
+    steering_relay_1 = HIGH;
+    steering_relay_2 = HIGH;
   }
   // Modify Max Speed
   if (ps2x.Button(PSB_L1)) {
-    max_speed = max_speed - 5;
+    max_speed = max_speed - 2;
   }
   if (ps2x.Button(PSB_R1)) {
-    max_speed = max_speed + 5;
+    max_speed = max_speed + 2;
   }
+
+
   // Enable/Disable Beast Mode
   if (ps2x.Button(PSB_SELECT)) {
-    if (beast_mode) {
-      beast_mode = false;
-      max_speed = 40;
-    } else {
-      // Someone enabled Beast Mode!
-      beast_mode = true;
-      // Speed to Max
-      max_speed = 250;
+    if (reportOnRelease(true, beast_mode)) {
+      if (beast_mode) {
+        beast_mode = false;
+        max_speed = 40;
+      } else {
+        // Someone enabled Beast Mode!
+        beast_mode = true;
+        // Speed to Max
+        max_speed = 250;
+      }
     }
-    delay(50);
   }
   // Limit max speed
   if (max_speed > 250) {
@@ -252,23 +300,20 @@ void loop()
     cruise_control = false;
   }
 
-
   // *********************************
   // Output Current Status - Do Stuff!
   // *********************************
-
   Serial.print( "max_speed: " + threeDigitFormat(max_speed));
   Serial.print(" pwm:" + threeDigitFormat(pwm_value));
   Serial.print(" target_speed: " + threeDigitFormat(target_speed));
   Serial.print(" dir: " + String(motor_direction) );
   Serial.print(" cruise: " + String(cruise_control));
+  Serial.print(" beast: " + String(beast_mode));
   Serial.print(" brake: " + String(engine_power));
   Serial.print(" steering_power: " + String(steering_power));
-  Serial.print(" lx:" + threeDigitFormat(ps2x.Analog(PSS_LX)) );
-  Serial.print(" ly:" + threeDigitFormat(ly_pos));
-  Serial.print(" rx:" + threeDigitFormat(rx_pos));
-  Serial.print(" ry:" + threeDigitFormat(ps2x.Analog(PSS_RY)));
-  Serial.println(" relays:" + String(relay3_state) + String(relay4_state));
+  Serial.print(" Throttle:" + threeDigitFormat(steering_pos));
+  Serial.print(" Steering:" + threeDigitFormat(throttle_pos));
+  Serial.println(" relays:" + String(steering_relay_1) + String(steering_relay_2));
   // Make sure values are between 0 and 250
   if (pwm_value < 0) {
     pwm_value = 0;
@@ -276,6 +321,24 @@ void loop()
   if (pwm_value > 250) {
     pwm_value = 250;
   }
+
+  // Store values to see if they are consistent
+  // Use case:
+  // Only activate/deactivate cruise control when button is released
+  // To stop on/off/on/off scenario whilst button is down
+  storage_array[] = {max_speed,
+                     pwm_value,
+                     target_speed,
+                     motor_direction,
+                     cruise_control,
+                     beast_mode,
+                     engine_power,
+                     steering_power,
+                     steering_pos,
+                     throttle_pos,
+                     steering_relay_1,
+                     steering_relay_2
+                    };
   // Do Stuff!
   // Turn brake off
   digitalWrite(RELAY1_PIN, engine_power);
@@ -283,8 +346,8 @@ void loop()
   analogWrite(PWM_PIN, pwm_value);
   digitalWrite(DIR_PIN, motor_direction);
   // Setup steering
-  digitalWrite(RELAY3_PIN, relay3_state);
-  digitalWrite(RELAY4_PIN, relay4_state);
+  digitalWrite(RELAY3_PIN, steering_relay_1);
+  digitalWrite(RELAY4_PIN, steering_relay_2);
   // Now turn the power on for the steering
   digitalWrite(RELAY2_PIN, steering_power);
   delay (10);
