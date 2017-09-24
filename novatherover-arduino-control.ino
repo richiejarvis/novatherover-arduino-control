@@ -162,7 +162,6 @@ int reportOnRelease(int newValue, int storagePos) {
   } else {
     return storage_array[newValue];
   }
-
 }
 
 void loop()
