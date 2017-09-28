@@ -57,6 +57,7 @@ boolean beast_mode = false;
 boolean first_run = false;
 boolean skip_initial = true;
 boolean controller_present = false;
+boolean accept_change = true;
 
 // Storage array to record previous condition
 int storage_array[20];
@@ -118,6 +119,7 @@ void setup()
 // PSB_SQUARE - Emergency Stop
 
 void speedChange() {
+  first_run = true;
   // Check for beast_mode first....
   if (!beast_mode && target_speed != pwm_value) {
     // Speed up more gently
@@ -145,6 +147,8 @@ void speedChange() {
         pwm_value = pwm_value - 30;
       }
     }
+  } else {
+    pwm_value = target_speed;
   }
 }
 
@@ -165,14 +169,7 @@ String threeDigitFormat(int value) {
   }
 }
 
-// This function will report the newValue only when it does not match the old value
-int reportOnRelease(int newValue, int storagePos) {
-  if (newValue == storage_array[storagePos]) {
-    return storage_array[storagePos];
-  } else {
-    return storage_array[newValue];
-  }
-}
+
 
 void loop()
 {
@@ -233,24 +230,23 @@ void loop()
           target_speed = map(throttle_pos, 128, 0, 0, max_speed);
           motor_direction = LOW;
           brake_power = LOW;
-          first_run = true;
           speedChange();
         } else if (throttle_pos > 190) {
           // Go Backwards
-          target_speed = map(throttle_pos, 128, 255, 0, max_speed);
+          target_speed = map(throttle_pos, 128, 250, 0, max_speed);
           motor_direction = HIGH;
           brake_power = LOW;
-          first_run = true;
           speedChange();
-        } else if (cruise_control && pwm_value > 0) {
+        } else if (cruise_control) {
           // Cruise Mode On
           brake_power = LOW;
         } else if (throttle_pos == 127 ) {
           target_speed = 0;
           brake_power = HIGH;
-          first_run = true;
           speedChange();
         }
+      } else {
+        target_speed = max_speed;
       }
 
       // Adjust the steering via relays
@@ -275,27 +271,26 @@ void loop()
       if (ps2x.Button(PSB_L1)) {
         max_speed = max_speed - 2;
         first_run = true;
-        speedChange();
       }
       if (ps2x.Button(PSB_R1)) {
         max_speed = max_speed + 2;
         first_run = true;
-        speedChange();
       }
-      // Enable/Disable Beast Mode
-      if (ps2x.Button(PSB_SELECT)) {
-        if (reportOnRelease(true, 5)) {
-          if (beast_mode) {
-            beast_mode = false;
-            max_speed = 40;
-          } else {
-            // Someone enabled Beast Mode!
-            beast_mode = true;
-            // Speed to Max
-            max_speed = 250;
-          }
-        }
+      // Enable Beast Mode
+      if (ps2x.Button(PSB_SELECT) && accept_change && !beast_mode) {
+        beast_mode = true;
+        max_speed = 250;
+        accept_change = false;
       }
+
+      // Disable Beast Mode
+      if (ps2x.Button(PSB_SELECT) && accept_change && beast_mode) {
+        beast_mode = false;
+        max_speed = 20;
+        accept_change = false;
+      }
+
+
       // Limit max speed
       if (max_speed > 250) {
         max_speed = 250;
@@ -304,14 +299,21 @@ void loop()
         max_speed = 15;
       }
       // Cruise Control
-      if (ps2x.Button(PSB_R2)) {
+      if ((ps2x.Button(PSB_R2) || ps2x.Button(PSB_L2)) && accept_change && !cruise_control && pwm_value > 0) {
         cruise_control = true;
         pwm_value = target_speed;
+        accept_change = false;
       }
       // Cruise Off
-      if (ps2x.Button(PSB_L2)) {
+      if ((ps2x.Button(PSB_R2) || ps2x.Button(PSB_L2)) && accept_change && cruise_control) {
         cruise_control = false;
+        target_speed = 0;
+        first_run = true;
+        accept_change = false;
       }
+
+
+
       // Emergency Stop
       if (ps2x.Button(PSB_SQUARE)) {
         pwm_value = 0;
@@ -320,6 +322,13 @@ void loop()
         cruise_control = false;
       }
 
+      if (pwm_value != target_speed) {
+        speedChange();
+      }
+      // Reset accept_change if buttons are not pushed
+      if (!(ps2x.Button(PSB_SELECT) || ps2x.Button(PSB_R2) || ps2x.Button(PSB_L2))) {
+        accept_change = true;
+      }
 
       // Make sure values are between 0 and 250
       if (pwm_value < 0) {
