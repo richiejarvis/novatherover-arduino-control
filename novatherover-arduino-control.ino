@@ -122,7 +122,7 @@ void speedChange() {
   first_run = true;
 
   // Check for beast_mode first....
-  if (!beast_mode && (target_speed != pwm_value)) {
+  if ((target_speed != pwm_value)) {
     // Speed up more gently
 
     if (first_run) {
@@ -152,8 +152,6 @@ void speedChange() {
         pwm_value = pwm_value - 10;
       }
     }
-  } else {
-    pwm_value = target_speed;
   }
 }
 
@@ -282,30 +280,44 @@ void loop()
         cruise_control = false;
       }
       if (accept_change) {
-        // Enable Beast Mode
-        if (ps2x.Button(PSB_SELECT) && !beast_mode) {
-          beast_mode = true;
-          max_speed = 250;
-          accept_change = false;
-        }
-        // Disable Beast Mode
-        if (ps2x.Button(PSB_SELECT) && beast_mode) {
-          beast_mode = false;
-          max_speed = 20;
-          accept_change = false;
+        // Beast Mode
+        // If disabled, turn it on
+        // If enabled, turn it off
+        if (!beast_mode) {
+          // Enable Beast Mode
+          if (ps2x.Button(PSB_SELECT)) {
+            beast_mode = true;
+            max_speed = 255;
+            target_speed = 255;
+            pwm_value = 230;
+            accept_change = false;
+          }
+        } else {
+          // Disable Beast Mode
+          if (ps2x.Button(PSB_SELECT)) {
+            beast_mode = false;
+            max_speed = 20;
+            target_speed = 20;
+            accept_change = false;
+          }
         }
         // Cruise Control
-        if ((ps2x.Button(PSB_R2) || ps2x.Button(PSB_L2)) && !cruise_control && pwm_value > 0) {
-          cruise_control = true;
-          pwm_value = target_speed;
-          accept_change = false;
-        }
-        // Cruise Off
-        if ((ps2x.Button(PSB_R2) || ps2x.Button(PSB_L2))  && cruise_control) {
-          cruise_control = false;
-          target_speed = 0;
-          first_run = true;
-          accept_change = false;
+        // If disabled, turn it on
+        // If enabled, turn it off
+        if (!cruise_control) {
+          if ((ps2x.Button(PSB_R2) || ps2x.Button(PSB_L2))) {
+            cruise_control = true;
+            pwm_value = target_speed;
+            accept_change = false;
+          }
+        } else {
+          // Cruise Off
+          if ((ps2x.Button(PSB_R2) || ps2x.Button(PSB_L2))) {
+            cruise_control = false;
+            target_speed = 0;
+            first_run = true;
+            accept_change = false;
+          }
         }
       }
       // Reset accept_change if buttons are not pushed
