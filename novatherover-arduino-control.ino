@@ -41,7 +41,7 @@ int buttonBounceCounter = 0;
 
 // Set pin vars to off/high
 int motor_direction = HIGH;
-int brake_power = HIGH;
+int brake_power = LOW;
 int steering_power = HIGH;
 int steering_relay_1 = HIGH;
 int steering_relay_2 = HIGH;
@@ -51,6 +51,7 @@ int pss_lx = 0;
 int pss_ly = 0;
 int pss_rx = 0;
 int pss_ry = 0;
+int lights_counter = 0;
 
 boolean cruise_control = false;
 boolean beast_mode = false;
@@ -58,6 +59,7 @@ boolean first_run = false;
 boolean skip_initial = true;
 boolean controller_present = false;
 boolean accept_change = true;
+
 
 // Storage array to record previous condition
 int storage_array[20];
@@ -107,6 +109,13 @@ void setup()
   digitalWrite(RELAY2_PIN, steering_power);
   digitalWrite(RELAY3_PIN, steering_relay_1);
   digitalWrite(RELAY4_PIN, steering_relay_2);
+  // Flash Lights to indicate readyness
+  for (int count = 0 ; count < 2  ; count++) {
+    digitalWrite(RELAY1_PIN, HIGH);
+    delay(20);
+    digitalWrite(RELAY1_PIN, LOW);
+    delay(20);
+  }
 }
 
 // Controls
@@ -172,6 +181,12 @@ String threeDigitFormat(int value) {
   }
 }
 
+void flashOnce() {
+  digitalWrite(RELAY1_PIN, HIGH);
+  delay(20);
+  digitalWrite(RELAY1_PIN, LOW);
+  delay(20);
+}
 
 
 void loop()
@@ -278,6 +293,7 @@ void loop()
         brake_power = HIGH;
         target_speed = 0;
         cruise_control = false;
+        flashOnce();
       }
       if (accept_change) {
         // Beast Mode
@@ -291,6 +307,7 @@ void loop()
             target_speed = 255;
             pwm_value = 230;
             accept_change = false;
+            flashOnce();
           }
         } else {
           // Disable Beast Mode
@@ -299,6 +316,8 @@ void loop()
             max_speed = 20;
             target_speed = 20;
             accept_change = false;
+            flashOnce();
+            flashOnce();
           }
         }
         // Cruise Control
@@ -309,6 +328,7 @@ void loop()
             cruise_control = true;
             pwm_value = target_speed;
             accept_change = false;
+            flashOnce();
           }
         } else {
           // Cruise Off
@@ -317,6 +337,8 @@ void loop()
             target_speed = 0;
             first_run = true;
             accept_change = false;
+            flashOnce();
+
           }
         }
       }
@@ -343,6 +365,16 @@ void loop()
       pwm_value = 250;
     }
 
+
+    if (brake_power && lights_counter > 0 ) {
+      lights_counter++;
+      if (lights_counter > 100 ) {
+        brake_power = HIGH;
+        lights_counter = 0;
+      } else {
+        brake_power = LOW;
+      }
+    }
     if (controller_present) {
       // Store values to see if they are consistent
       // Use case:
@@ -364,7 +396,7 @@ void loop()
         speedChange();
       }
       // Do Stuff!
-      // Turn brake off
+      // Turn brake/lights off
       digitalWrite(RELAY1_PIN, brake_power);
       // Set the throttle
       analogWrite(PWM_PIN, pwm_value);
