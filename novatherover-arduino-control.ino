@@ -41,7 +41,7 @@ int buttonBounceCounter = 0;
 
 // Set pin vars to off/high
 int motor_direction = HIGH;
-int brake_power = LOW;
+int brake_power = true;
 int steering_power = HIGH;
 int steering_relay_1 = HIGH;
 int steering_relay_2 = HIGH;
@@ -52,6 +52,7 @@ int pss_ly = 0;
 int pss_rx = 0;
 int pss_ry = 0;
 int lights_counter = 0;
+int light_delay = 40;
 
 boolean cruise_control = false;
 boolean beast_mode = false;
@@ -66,6 +67,19 @@ int storage_array[20];
 
 // Card reset function
 void(* resetFunc) (void) = 0;
+
+
+void flashLights(int max_count) {
+  // Flash Lights to indicate readyness
+  for (int count = 0 ; count < max_count  ; count++) {
+    digitalWrite(RELAY1_PIN, brake_power);
+    delay(light_delay);
+    digitalWrite(RELAY1_PIN, !brake_power);
+    delay(light_delay);
+  }
+  digitalWrite(RELAY1_PIN, brake_power);
+}
+
 
 void setup()
 {
@@ -109,13 +123,8 @@ void setup()
   digitalWrite(RELAY2_PIN, steering_power);
   digitalWrite(RELAY3_PIN, steering_relay_1);
   digitalWrite(RELAY4_PIN, steering_relay_2);
-  // Flash Lights to indicate readyness
-  for (int count = 0 ; count < 2  ; count++) {
-    digitalWrite(RELAY1_PIN, HIGH);
-    delay(20);
-    digitalWrite(RELAY1_PIN, LOW);
-    delay(20);
-  }
+
+
 }
 
 // Controls
@@ -129,38 +138,53 @@ void setup()
 
 void speedChange() {
   first_run = true;
-
+  Serial.print("SC");
   // Check for beast_mode first....
-  if ((target_speed != pwm_value)) {
-    // Speed up more gently
+  if (!beast_mode) {
+    if ((target_speed != pwm_value)) {
+      // Speed up more gently
 
-    if (first_run) {
-      // Only set the increment once
-      increment = target_speed / 50;
-      if (increment < 1) {
-        increment = 1;
+      if (first_run) {
+        // Only set the increment once
+        increment = target_speed / 50;
+        if (increment < 1) {
+          increment = 1;
+        }
+        first_run = false;
       }
-      first_run = false;
-    }
-    if (target_speed > pwm_value) {
-      pwm_value = pwm_value + increment;
-      if (pwm_value > target_speed) {
-        pwm_value = target_speed;
+      if (target_speed > pwm_value) {
+        pwm_value = pwm_value + increment;
+        if (pwm_value > target_speed) {
+          pwm_value = target_speed;
+        }
       }
-    }
-    else if (target_speed < pwm_value) {
-      // Slow down in a less jolty-way
-      if (pwm_value > 0 && pwm_value < 100) {
-        // speed is less than 50 - use 10 step slowdown
-        pwm_value = pwm_value - 2;
-      } else if (pwm_value >= 100 & pwm_value < 200) {
-        // speed is greater than 100 && less than 200 - use 30 step slowdown
-        pwm_value = pwm_value - 5;
-      } else if (pwm_value >= 200) {
-        // speed is greater than 200 use 60 step slowdown
-        pwm_value = pwm_value - 10;
+      else if (target_speed < pwm_value) {
+        // Slow down in a less jolty-way
+        if (pwm_value > 0 && pwm_value < 100) {
+          // speed is less than 50 - use 10 step slowdown
+          pwm_value = pwm_value - 2;
+        } else if (pwm_value >= 100 & pwm_value < 200) {
+          // speed is greater than 100 && less than 200 - use 30 step slowdown
+          pwm_value = pwm_value - 5;
+        } else if (pwm_value >= 200) {
+          // speed is greater than 200 use 60 step slowdown
+          pwm_value = pwm_value - 10;
+        }
       }
+
     }
+  } else if (pwm_value != target_speed) {
+    pwm_value = target_speed - 10;
+  } else if (pwm_value == target_speed - 10){
+    pwm_value = target_speed;
+  }
+
+  // Make sure values are between 0 and 255
+  if (pwm_value < 0) {
+    pwm_value = 0;
+  }
+  if (pwm_value > 255) {
+    pwm_value = 255;
   }
 }
 
@@ -179,13 +203,6 @@ String threeDigitFormat(int value) {
   } else {
     return String(value);
   }
-}
-
-void flashOnce() {
-  digitalWrite(RELAY1_PIN, HIGH);
-  delay(20);
-  digitalWrite(RELAY1_PIN, LOW);
-  delay(20);
 }
 
 
@@ -243,34 +260,30 @@ void loop()
           // Go Forward
           target_speed = map(throttle_pos, 128, 0, 0, max_speed);
           motor_direction = LOW;
-          brake_power = LOW;
         } else if (throttle_pos > 190) {
           // Go Backwards
-          target_speed = map(throttle_pos, 128, 250, 0, max_speed);
+          target_speed = map(throttle_pos, 128, 255, 0, max_speed);
           motor_direction = HIGH;
-          brake_power = LOW;
-        } else if (cruise_control) {
-          // Cruise Mode On
-          brake_power = LOW;
         } else if (throttle_pos == 127 ) {
           target_speed = 0;
-          brake_power = HIGH;
         }
       } else {
         target_speed = max_speed;
       }
 
       // Adjust the steering via relays
-      if (steering_pos < 100 ) {
+      if (steering_pos < 125 ) {
         // Steer Left
         steering_power = LOW;
         steering_relay_1 = LOW;
         steering_relay_2 = LOW;
-      } else if (steering_pos > 200) {
+
+      } else if (steering_pos > 130) {
         // Steer Right
         steering_power = LOW;
         steering_relay_1 = HIGH;
         steering_relay_2 = HIGH;
+
       } else  {
         // Don't Move
         steering_power = HIGH;
@@ -293,7 +306,7 @@ void loop()
         brake_power = HIGH;
         target_speed = 0;
         cruise_control = false;
-        flashOnce();
+        flashLights(1);
       }
       if (accept_change) {
         // Beast Mode
@@ -304,10 +317,10 @@ void loop()
           if (ps2x.Button(PSB_SELECT)) {
             beast_mode = true;
             max_speed = 255;
-            target_speed = 255;
-            pwm_value = 230;
+            //            target_speed = 255;
+            //            pwm_value = 230;
             accept_change = false;
-            flashOnce();
+            flashLights(5);
           }
         } else {
           // Disable Beast Mode
@@ -316,8 +329,7 @@ void loop()
             max_speed = 20;
             target_speed = 20;
             accept_change = false;
-            flashOnce();
-            flashOnce();
+            flashLights(3);
           }
         }
         // Cruise Control
@@ -328,7 +340,7 @@ void loop()
             cruise_control = true;
             pwm_value = target_speed;
             accept_change = false;
-            flashOnce();
+            flashLights(6);
           }
         } else {
           // Cruise Off
@@ -337,7 +349,7 @@ void loop()
             target_speed = 0;
             first_run = true;
             accept_change = false;
-            flashOnce();
+            flashLights(4);
 
           }
         }
@@ -350,30 +362,25 @@ void loop()
 
 
     // Limit max speed
-    if (max_speed > 250) {
-      max_speed = 250;
+    if (max_speed > 255) {
+      max_speed = 255;
     }
     if (max_speed < 15) {
       max_speed = 15;
     }
 
-    // Make sure values are between 0 and 250
-    if (pwm_value < 0) {
-      pwm_value = 0;
-    }
-    if (pwm_value > 250) {
-      pwm_value = 250;
-    }
 
 
-    if (brake_power && lights_counter > 0 ) {
+    if (pwm_value == 0 ) {
       lights_counter++;
       if (lights_counter > 100 ) {
         brake_power = HIGH;
-        lights_counter = 0;
-      } else {
-        brake_power = LOW;
+        lights_counter = 100;
       }
+    }
+    else if (pwm_value > 0) {
+      brake_power = LOW;
+      lights_counter = 0;
     }
     if (controller_present) {
       // Store values to see if they are consistent
@@ -395,17 +402,19 @@ void loop()
       if (pwm_value != target_speed) {
         speedChange();
       }
+
       // Do Stuff!
       // Turn brake/lights off
       digitalWrite(RELAY1_PIN, brake_power);
-      // Set the throttle
-      analogWrite(PWM_PIN, pwm_value);
+
       digitalWrite(DIR_PIN, motor_direction);
       // Setup steering
       digitalWrite(RELAY3_PIN, steering_relay_1);
       digitalWrite(RELAY4_PIN, steering_relay_2);
       // Now turn the power on for the steering
       digitalWrite(RELAY2_PIN, steering_power);
+      // Set the throttle
+      analogWrite(PWM_PIN, pwm_value);
     } else {
       target_speed = 0;
     }
@@ -431,7 +440,7 @@ void loop()
   Serial.print(" dir:" + threeDigitFormat(steering_pos));
   Serial.print(" pad:" + String(controller_present));
   Serial.println(" dir:" + String(steering_power) + String(steering_relay_1) + String(steering_relay_2));
-  delay (10);
+  delay (20);
 }
 
 
