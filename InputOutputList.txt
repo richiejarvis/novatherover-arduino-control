@@ -6,6 +6,12 @@ Battery2-/24vGround
 24vBrake
 24vMotor
 24vMotor
+
+
+
+
+
+
 12vSteering
 12vSteering
 24vGround
